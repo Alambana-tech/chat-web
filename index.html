@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Chat Room - No Login Required | Temporary Group Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chat-container {
+            height: calc(100vh - 140px);
+        }
+        .message-bubble {
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="app" class="max-w-md mx-auto bg-white h-screen flex flex-col">
+        <!-- Username Input Screen -->
+        <div id="username-screen" class="flex flex-col items-center justify-center h-full p-4">
+            <div class="w-full max-w-sm bg-white rounded-lg p-8 shadow-md">
+                <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/1c1de205-3181-4a8a-9422-c0f2bb94198b.png" alt="Group chat logo with indigo background" class="mx-auto mb-6 rounded-full">
+                <h2 class="text-2xl font-bold text-center text-gray-800 mb-6">Live Group Chat Room</h2>
+                <div class="mb-4">
+                    <label for="username" class="block text-gray-700 text-sm font-bold mb-2">Your Display Name</label>
+                    <input 
+                        type="text" 
+                        id="username" 
+                        placeholder="Enter a nickname" 
+                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                        autocomplete="off"
+                    >
+                </div>
+                <button id="start-chat" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded w-full focus:outline-none focus:shadow-outline">
+                    Start Chatting
+                </button>
+                <p class="text-xs text-gray-500 mt-4 text-center">
+                    Note: Messages disappear when you leave. No login/registration - pick any nickname to start chatting!
+                </p>
+            </div>
+        </div>
+
+        <!-- Chat Screen (hidden initially) -->
+        <div id="chat-screen" class="hidden h-full flex flex-col">
+            <!-- Chat Header -->
+            <div class="bg-purple-600 text-white p-3 flex items-center shadow">
+                <div class="flex items-center">
+                    <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/8f211c7f-d6c5-4c49-a52d-ed3bc9f23263.png" alt="Group chat icon with purple background and white G letter" class="rounded-full mr-3">
+                    <div>
+                        <h1 class="font-bold">Live Chat Room</h1>
+                        <p class="text-xs opacity-75" id="online-count">0 active users</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Messages Container -->
+            <div id="chat-messages" class="chat-container p-4 overflow-y-auto scrollbar-hide flex-grow">
+                <div class="text-center text-gray-500 text-sm py-4">
+                    Live group chat - messages disappear when users leave. Type something to start chatting!
+                </div>
+            </div>
+
+            <!-- Message Input -->
+            <div class="bg-gray-50 p-3 border-t flex">
+                <input 
+                    type="text" 
+                    id="message-input" 
+                    placeholder="Type a message..." 
+                    class="flex-grow border rounded-l-lg px-4 py-2 focus:outline-none focus:border-purple-500"
+                    autocomplete="off"
+                >
+                <button id="send-button" class="bg-purple-600 text-white px-4 py-2 rounded-r-lg hover:bg-purple-700 focus:outline-none">
+                    Send
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // DOM Elements
+            const usernameScreen = document.getElementById('username-screen');
+            const chatScreen = document.getElementById('chat-screen');
+            const usernameInput = document.getElementById('username');
+            const startChatBtn = document.getElementById('start-chat');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            const chatMessages = document.getElementById('chat-messages');
+            const onlineCount = document.getElementById('online-count');
+
+            // Chat state
+            let username = '';
+            let onlineUsers = 0;
+            
+            // Simple peer-to-peer simulation using BroadcastChannel
+            const chatChannel = new BroadcastChannel('anonymous_chat');
+            
+            // Set random color for user messages
+            const userColor = `hsl(${Math.floor(Math.random() * 360)}, 70%, 50%)`;
+
+            // Event Listeners
+            startChatBtn.addEventListener('click', function() {
+                if (usernameInput.value.trim() === '') {
+                    alert('Please enter a display name');
+                    return;
+                }
+                
+                username = usernameInput.value.trim();
+                usernameScreen.classList.add('hidden');
+                chatScreen.classList.remove('hidden');
+                messageInput.focus();
+                
+                // Simulate user joining
+                onlineUsers++;
+                updateOnlineCount();
+                
+                // Notify others (in a real app, this would be server-side)
+                chatChannel.postMessage({
+                    type: 'user_joined',
+                    username: username,
+                    online: onlineUsers
+                });
+            });
+
+            sendButton.addEventListener('click', sendMessage);
+            messageInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+
+            // Handle incoming messages
+            chatChannel.addEventListener('message', function(event) {
+                const data = event.data;
+                
+                if (data.type === 'message') {
+                    addMessage(data.username, data.text, false, data.timestamp);
+                } else if (data.type === 'user_joined') {
+                    onlineUsers = data.online;
+                    updateOnlineCount();
+                    addSystemMessage(`${data.username} joined the chat`);
+                }
+            });
+
+            // Functions
+            function sendMessage() {
+                const text = messageInput.value.trim();
+                if (text === '') return;
+                
+                const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                // Add to local chat
+                addMessage(username, text, true, timestamp);
+                
+                // Broadcast to others (in a real app, this would be server-side)
+                chatChannel.postMessage({
+                    type: 'message',
+                    username: username,
+                    text: text,
+                    timestamp: timestamp
+                });
+                
+                messageInput.value = '';
+                messageInput.focus();
+            }
+
+            function addMessage(sender, text, isOwn, timestamp) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `flex mb-3 ${isOwn ? 'justify-end' : 'justify-start'}`;
+                
+                messageDiv.innerHTML = `
+                    <div class="message-bubble ${isOwn ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-800'} rounded-lg px-4 py-2 relative">
+                        <span class="text-xs font-bold" style="color: ${isOwn ? 'white' : userColor}">${sender}</span><br>
+                        ${text}
+                        <span class="text-xs opacity-75 block text-right mt-1 ${isOwn ? 'text-purple-200' : 'text-gray-500'}">${timestamp}</span>
+                    </div>
+                `;
+                
+                chatMessages.appendChild(messageDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            function addSystemMessage(text) {
+                const systemDiv = document.createElement('div');
+                systemDiv.className = 'text-center text-gray-500 text-xs my-2';
+                systemDiv.textContent = text;
+                chatMessages.appendChild(systemDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+
+            function updateOnlineCount() {
+                onlineCount.textContent = `${onlineUsers} active user${onlineUsers !== 1 ? 's' : ''}`;
+            }
+
+            // Clear chat when leaving
+            window.addEventListener('beforeunload', function() {
+                chatChannel.postMessage({
+                    type: 'user_left',
+                    online: onlineUsers > 0 ? onlineUsers - 1 : 0
+                });
+            });
+        });
+    </script>
+</body>
+</html>
